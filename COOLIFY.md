@@ -2,6 +2,8 @@
 
 This guide deploys **Woodpecker CI**, a **private Docker Registry**, and **Coolify** itself on a single Contabo Cloud VPS. Coolify acts as the "boss" — it handles SSL, reverse proxy, and gives you a slick PaaS dashboard to manage everything.
 
+> 💡 **Shortcut:** Contabo offers Coolify as a **one-click marketplace image**. If you choose this during server creation, Coolify is pre-installed and ready to go — skip straight to Step 3 below.
+
 ---
 
 ## 📐 Architecture
@@ -59,59 +61,68 @@ Create **A records** pointing to your Contabo VPS IP:
 
 ---
 
-## 🔑 Step 2: SSH Into Your Server
+## 🔑 Step 2: Server Setup — Pick Your Path
 
-Contabo emails you the root password after provisioning.
+### Path A: Coolify Pre-installed (Contabo Marketplace) ⭐ **Recommended**
+
+When ordering your Contabo VPS, select **Coolify** from the "Apps & Images" / "Marketplace" section. Contabo then pre-installs it for you.
+
+1. SSH into the server (Contabo emails you the root password)
+   ```bash
+   ssh root@YOUR_CONTABO_IP
+   ```
+
+2. Update packages (good practice, but optional)
+   ```bash
+   apt update && apt upgrade -y
+   ```
+
+3. Coolify is already running. Verify:
+   ```bash
+   docker ps | grep coolify
+   ```
+   You should see Coolify containers.
+
+4. (Optional) Create a non-root user for day-to-day work:
+   ```bash
+   adduser deploy
+   usermod -aG sudo deploy
+   mkdir -p /home/deploy/.ssh
+   cp /root/.ssh/authorized_keys /home/deploy/.ssh/
+   chown -R deploy:deploy /home/deploy/.ssh
+   chmod 700 /home/deploy/.ssh
+   chmod 600 /home/deploy/.ssh/authorized_keys
+   ```
+
+> 🎉 **Skip to Step 3** — Coolify is already running on port `8000`.
+
+---
+
+### Path B: Manual Install (Any VPS)
+
+If you didn't pick the Coolify image (e.g. bare Ubuntu/Debian):
 
 ```bash
 ssh root@YOUR_CONTABO_IP
-```
 
-Do basic hardening (optional but recommended):
-
-```bash
-# Update everything
+# Update and harden
 apt update && apt upgrade -y
-
-# Set hostname
 hostnamectl set-hostname coolify
 
-# Add a non-root user (Coolify can run as root, but this is cleaner)
+# Add non-root user (optional but recommended)
 adduser deploy
 usermod -aG sudo deploy
 
-# Copy SSH key so you don't type passwords
-mkdir -p /home/deploy/.ssh
-cp /root/.ssh/authorized_keys /home/deploy/.ssh/
-chown -R deploy:deploy /home/deploy/.ssh
-chmod 700 /home/deploy/.ssh
-chmod 600 /home/deploy/.ssh/authorized_keys
-```
-
----
-
-## 🎛️ Step 3: Install Coolify
-
-Log in as your non-root user (or stay as root — Coolify's installer handles either):
-
-```bash
-# Switch to your user
+# Install Coolify
 su - deploy
-
-# Run the official Coolify installer
 curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash
 ```
 
-This will:
-- Install Docker if missing
-- Pull Coolify containers
-- Start Coolify on port **8000**
-
-⏳ Takes ~3–5 minutes.
+This installs Docker, pulls Coolify containers, and starts it on port **8000**. Takes ~3–5 minutes.
 
 ---
 
-## 🌐 Step 4: Initial Coolify Setup
+## 🌐 Step 3: Initial Coolify Setup
 
 1. Open `http://YOUR_CONTABO_IP:8000` in your browser
 2. Create your admin account
@@ -133,7 +144,7 @@ Now access your dashboard at: **`https://coolify.yourdomain.com`**
 
 ---
 
-## 🪵 Step 5: Create the Docker Compose Resource
+## 🪵 Step 4: Create the Docker Compose Resource
 
 In Coolify:
 
@@ -197,7 +208,7 @@ Click **Deploy** (or **Save & Deploy**). Coolify will:
 
 ---
 
-## 🔐 Step 6: Verify Registry Auth Was Created
+## 🔐 Step 5: Verify Registry Auth Was Created
 
 The `registry-auth-init` container should have run once and generated the `htpasswd` file. Check it:
 
@@ -212,7 +223,7 @@ If you see it already exists from a previous deploy, that's fine too.
 
 ---
 
-## 🔑 Step 7: Create GitHub OAuth App
+## 🔑 Step 6: Create GitHub OAuth App
 
 Woodpecker needs OAuth to know who you are when you log in.
 
@@ -232,7 +243,7 @@ Woodpecker needs OAuth to know who you are when you log in.
 
 ---
 
-## ✅ Step 8: Test Everything
+## ✅ Step 7: Test Everything
 
 ### Woodpecker CI
 Visit: `https://ci.yourdomain.com`
@@ -256,7 +267,7 @@ Visit: `https://ui.registry.yourdomain.com`
 
 ---
 
-## 🔄 Step 9: Your First Pipeline
+## 🔄 Step 8: Your First Pipeline
 
 In any GitHub repo, create `.woodpecker.yml`:
 
@@ -296,7 +307,7 @@ Push to `main` → watch the build → image appears in Registry UI 🎉
 
 ---
 
-## 🖥️ Step 10: Worker Machine Setup
+## 🖥️ Step 9: Worker Machine Setup
 
 Your second machine just needs to pull images from the registry.
 
@@ -315,7 +326,7 @@ docker pull registry.yourdomain.com/myapp:latest
 
 ---
 
-## 🎛️ Step 11: Deploy Apps via Coolify (Bonus)
+## 🎛️ Step 10: Deploy Apps via Coolify (Bonus)
 
 Now that Coolify is running, you also have a full PaaS:
 

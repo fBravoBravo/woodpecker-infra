@@ -4,6 +4,9 @@ set -euo pipefail
 # =============================================================================
 # Initial server prep for Coolify deployment on Contabo Cloud VPS
 # Run this once after SSH-ing into your fresh Contabo server.
+#
+# NOTE: If you selected Coolify from the Contabo Marketplace (pre-installed),
+# this script is OPTIONAL. You only need this for a bare Ubuntu/Debian image.
 # =============================================================================
 
 GREEN='\033[0;32m'
