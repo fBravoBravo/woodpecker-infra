@@ -1,0 +1,98 @@
+version: "3.8"
+
+services:
+  # ── Woodpecker Server ──────────────────────────────────────────────
+  woodpecker-server:
+    image: woodpeckerci/woodpecker-server:v2
+    restart: unless-stopped
+    # Port 8000 is exposed so Coolify can route a domain here via Traefik
+    ports:
+      - "8000"
+    volumes:
+      - woodpecker-data:/var/lib/woodpecker/
+    environment:
+      - WOODPECKER_OPEN=true
+      - WOODPECKER_HOST=${WOODPECKER_HOST}
+      - WOODPECKER_GRPC_ADDR=:9000
+      - WOODPECKER_ADMIN=${WOODPECKER_ADMIN_USERS}
+      # OAuth provider — GitHub (default). Change for GitLab/Gitea/Forgejo.
+      - WOODPECKER_GITHUB=true
+      - WOODPECKER_GITHUB_CLIENT=${GITHUB_CLIENT}
+      - WOODPECKER_GITHUB_SECRET=${GITHUB_SECRET}
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+
+  # ── Woodpecker Agent ───────────────────────────────────────────────
+  # Runs CI builds as sibling Docker containers via the host socket.
+  woodpecker-agent:
+    image: woodpeckerci/woodpecker-agent:v2
+    restart: unless-stopped
+    depends_on:
+      - woodpecker-server
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WOODPECKER_SERVER=woodpecker-server:9000
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+      - WOODPECKER_MAX_WORKFLOWS=2
+      - WOODPECKER_BACKEND=docker
+
+  # ── Docker Registry ────────────────────────────────────────────────
+  # Stores your private images. Accessible externally via HTTPS thanks
+  # to Coolify's built-in Traefik.
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    ports:
+      - "5000"
+    volumes:
+      - registry-data:/var/lib/registry
+      - registry-auth:/auth
+      - ../registry/config.yml:/etc/docker/registry/config.yml:ro
+    environment:
+      - REGISTRY_AUTH=htpasswd
+      - REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm
+      - REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
+
+  # ── Registry Auth Init ─────────────────────────────────────────────
+  # One-shot container that generates htpasswd from env vars on first boot.
+  # Exits immediately after creating the file.
+  registry-auth-init:
+    image: httpd:alpine
+    volumes:
+      - registry-auth:/auth
+    environment:
+      - REGISTRY_USER=${REGISTRY_USER}
+      - REGISTRY_PASSWORD=${REGISTRY_PASSWORD}
+    command: >
+      sh -c '
+        if [ ! -f /auth/htpasswd ]; then
+          htpasswd -Bbn "$$REGISTRY_USER" "$$REGISTRY_PASSWORD" > /auth/htpasswd;
+          echo "Registry htpasswd created";
+        else
+          echo "Registry htpasswd already exists — skipping";
+        fi
+      '
+    restart: "no"
+    depends_on: []
+
+  # ── Registry Web UI ────────────────────────────────────────────────
+  # Browse, inspect and delete images at https://ui.registry.yourdomain.com
+  registry-ui:
+    image: joxit/docker-registry-ui:main
+    restart: unless-stopped
+    ports:
+      - "80"
+    environment:
+      - NGINX_PROXY_PASS_URL=http://registry:5000
+      - REGISTRY_TITLE=Private Docker Registry
+      - DELETE_IMAGES=true
+      - SHOW_CATALOG_NB_TAGS=true
+      - CATALOG_MIN_BRANCHES=1
+      - CATALOG_MAX_BRANCHES=1
+      - THEME=auto
+
+volumes:
+  woodpecker-data:
+  registry-data:
+  registry-auth:

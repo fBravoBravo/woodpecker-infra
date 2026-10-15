@@ -1,6 +1,9 @@
-# 🪵 Woodpecker CI + Docker Registry on Hetzner
+# 🪵 Woodpecker CI + Docker Registry
 
 Production-ready CI/CD with a private Docker Registry, automatic SSL, and a worker-ready deployment setup.
+
+> 🎛️ **New: Coolify Edition** — Want Woodpecker CI + Registry + a full PaaS (Coolify) on a single affordable box? See [`COOLIFY.md`](COOLIFY.md) for deploying everything inside [Coolify](https://coolify.io/) on Contabo Cloud VPS. It's simpler, cleaner, and gives you app hosting on top of CI/CD.
+>
 
 ---
 
