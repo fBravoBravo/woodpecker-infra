@@ -1,0 +1,14 @@
+# Environment & Secrets
+.env
+.env.local
+
+# Generated auth files
+registry/auth/htpasswd
+registry/docker-config.json
+
+# TLS / Let's Encrypt data
+traefik/letsencrypt/
+
+# Backups
+*.tar.gz
+*.backup

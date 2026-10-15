@@ -1,0 +1,45 @@
+# Example Woodpecker pipeline that builds and pushes to your private registry
+# Place this file in your repository root as .woodpecker.yml
+
+variables:
+  - &registry "registry.yourdomain.com"
+  - &image "${registry}/myapp"
+
+steps:
+  test:
+    image: golang:1.22-alpine
+    commands:
+      - go test ./...
+    when:
+      - event: [push, pull_request]
+
+  build:
+    image: plugins/docker
+    settings:
+      registry: *registry
+      repo: *image
+      tags:
+        - "${CI_COMMIT_SHA:0:8}"
+        - latest
+      username:
+        from_secret: registry_username
+      password:
+        from_secret: registry_password
+      dockerfile: Dockerfile
+    when:
+      - event: push
+        branch: main
+
+  deploy-to-worker:
+    image: alpine
+    secrets: [ ssh_key ]
+    commands:
+      - apk add --no-cache openssh-client
+      - |
+        ssh -o StrictHostKeyChecking=no \
+            -i /woodpecker/.ssh/id_rsa \
+            user@worker.yourdomain.com \
+            "docker pull ${image}:latest && docker compose -f /opt/app/docker-compose.yml up -d"
+    when:
+      - event: push
+        branch: main

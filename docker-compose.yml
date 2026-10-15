@@ -1,0 +1,127 @@
+version: "3.8"
+
+services:
+  traefik:
+    image: traefik:v3.1
+    restart: unless-stopped
+    command:
+      - --api.dashboard=true
+      - --api.insecure=false
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --log.level=INFO
+      - --accesslog=true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/letsencrypt:/letsencrypt
+    networks:
+      - ci-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${BASE_DOMAIN}`)"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+      - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik-dashboard.middlewares=basic-auth@docker"
+      - "traefik.http.middlewares.basic-auth.basicauth.users=${TRAEFIK_AUTH}"
+
+  woodpecker-server:
+    image: woodpeckerci/woodpecker-server:v2
+    restart: unless-stopped
+    ports:
+      - "9000:9000"  # gRPC for agents
+    volumes:
+      - woodpecker-server-data:/var/lib/woodpecker/
+    environment:
+      - WOODPECKER_OPEN=true
+      - WOODPECKER_HOST=https://${WOODPECKER_DOMAIN}
+      - WOODPECKER_GRPC_ADDR=:9000
+      - WOODPECKER_ADMIN=${WOODPECKER_ADMIN_USERS}
+      # OAuth provider config (GitHub example)
+      - WOODPECKER_GITHUB=true
+      - WOODPECKER_GITHUB_CLIENT=${GITHUB_CLIENT}
+      - WOODPECKER_GITHUB_SECRET=${GITHUB_SECRET}
+      # Agent secret
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+    networks:
+      - ci-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.woodpecker.rule=Host(`${WOODPECKER_DOMAIN}`)"
+      - "traefik.http.routers.woodpecker.entrypoints=websecure"
+      - "traefik.http.routers.woodpecker.tls.certresolver=letsencrypt"
+      - "traefik.http.services.woodpecker.loadbalancer.server.port=8000"
+
+  woodpecker-agent:
+    image: woodpeckerci/woodpecker-agent:v2
+    restart: unless-stopped
+    depends_on:
+      - woodpecker-server
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WOODPECKER_SERVER=woodpecker-server:9000
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+      - WOODPECKER_MAX_WORKFLOWS=4
+      - WOODPECKER_BACKEND=docker
+    networks:
+      - ci-network
+
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    volumes:
+      - registry-data:/var/lib/registry
+      - ./registry/auth:/auth
+      - ./registry/config.yml:/etc/docker/registry/config.yml:ro
+    environment:
+      - REGISTRY_AUTH=htpasswd
+      - REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm
+      - REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
+    networks:
+      - ci-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.registry.rule=Host(`${REGISTRY_DOMAIN}`)"
+      - "traefik.http.routers.registry.entrypoints=websecure"
+      - "traefik.http.routers.registry.tls.certresolver=letsencrypt"
+      - "traefik.http.services.registry.loadbalancer.server.port=5000"
+      # Middleware to strip headers that might conflict
+      - "traefik.http.routers.registry.middlewares=registry-headers"
+      - "traefik.http.middlewares.registry-headers.headers.customRequestHeaders.X-Forwarded-Proto=https"
+
+  registry-ui:
+    image: joxit/docker-registry-ui:main
+    restart: unless-stopped
+    environment:
+      - NGINX_PROXY_PASS_URL=http://registry:5000
+      - REGISTRY_TITLE=Private Docker Registry
+      - DELETE_IMAGES=true
+      - SHOW_CATALOG_NB_TAGS=true
+      - CATALOG_MIN_BRANCHES=1
+      - CATALOG_MAX_BRANCHES=1
+      - THEME=auto
+    networks:
+      - ci-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.registry-ui.rule=Host(`ui.${REGISTRY_DOMAIN}`)"
+      - "traefik.http.routers.registry-ui.entrypoints=websecure"
+      - "traefik.http.routers.registry-ui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.registry-ui.loadbalancer.server.port=80"
+
+networks:
+  ci-network:
+    driver: bridge
+
+volumes:
+  woodpecker-server-data:
+  registry-data:
